@@ -1,0 +1,59 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Database
+data/*.sqlite
+data/*.db
+backend/*.db
+backend/:memory_guard:/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+backend/venv/
+dist/
+build/
+
+# Node / Frontend
+node_modules/
+dist/
+.vite/
+.next/
+
+# GCP / Cloud
+.gcloud/
+gcp-key*.json
+service-account*.json
+*-credentials.json
+
+# Claude Code
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data archives (keep example, ignore real exports)
+data/archive_*.csv
+data/*.parquet
+
+# Playwright
+playwright-state/
+cookies/
+browser-state/
+*_session.json
+
+# Runner logs and state
+runner/logs/
+*.pid
+*.log
+
+# Backend data dir symlink / local data
+backend/data
+runner/flags/

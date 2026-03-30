@@ -1,0 +1,12 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+openai>=1.66.0
+google-genai
+requests
+python-dotenv
+aiofiles
+pytest
+pytest-asyncio
+httpx
+python-multipart

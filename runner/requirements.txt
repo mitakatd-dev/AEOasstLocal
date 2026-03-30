@@ -1,0 +1,2 @@
+camoufox[geoip]
+requests==2.31.0

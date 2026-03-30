@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { width: 360px; font-family: system-ui, -apple-system, sans-serif; background: #f9fafb; color: #1f2937; }
+    .header { background: #6366f1; color: white; padding: 16px; }
+    .header h1 { font-size: 16px; font-weight: 700; }
+    .header p { font-size: 11px; opacity: 0.8; margin-top: 4px; }
+    .section { padding: 12px 16px; border-bottom: 1px solid #e5e7eb; }
+    .section h2 { font-size: 12px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .row label { font-size: 13px; color: #374151; }
+    .row span { font-size: 13px; font-weight: 600; }
+    .input-row { margin-bottom: 8px; }
+    .input-row input { width: 100%; padding: 6px 10px; font-size: 12px; border: 1px solid #d1d5db; border-radius: 6px; }
+    .btn { display: block; width: 100%; padding: 10px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+    .btn-primary { background: #6366f1; color: white; }
+    .btn-primary:hover { background: #4f46e5; }
+    .btn-secondary { background: #e5e7eb; color: #374151; }
+    .btn-secondary:hover { background: #d1d5db; }
+    .btn-danger { background: #fecaca; color: #dc2626; }
+    .btn-danger:hover { background: #fca5a5; }
+    .btn-row { display: flex; gap: 8px; margin-top: 8px; }
+    .btn-row .btn { flex: 1; margin-top: 0; }
+    .progress-bar { width: 100%; height: 6px; background: #e5e7eb; border-radius: 3px; margin-top: 8px; overflow: hidden; }
+    .progress-fill { height: 100%; background: #6366f1; border-radius: 3px; transition: width 0.3s; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .badge-running { background: #dbeafe; color: #2563eb; }
+    .badge-paused { background: #fef3c7; color: #d97706; }
+    .badge-idle { background: #f3f4f6; color: #6b7280; }
+    .current-prompt { background: white; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; margin-top: 8px; font-size: 12px; color: #4b5563; max-height: 60px; overflow: hidden; }
+    .current-prompt .label { font-weight: 600; color: #1f2937; font-size: 11px; margin-bottom: 4px; }
+    .platform-badges { display: flex; gap: 6px; margin-top: 6px; }
+    .platform { padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+    .platform-chatgpt { background: #ede9fe; color: #6366f1; }
+    .platform-gemini { background: #d1fae5; color: #059669; }
+    .platform-perplexity { background: #fef3c7; color: #d97706; }
+    .error { color: #dc2626; font-size: 12px; padding: 8px; background: #fef2f2; border-radius: 6px; margin-top: 8px; }
+    .success { color: #059669; font-size: 12px; padding: 8px; background: #ecfdf5; border-radius: 6px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>AEO Insights Collector</h1>
+    <p>Web portal response capture for brand visibility research</p>
+  </div>
+
+  <div class="section">
+    <h2>Backend Connection</h2>
+    <div class="input-row">
+      <input type="text" id="apiBase" value="http://localhost:8000" placeholder="http://localhost:8000" />
+      <p style="font-size:10px; color:#9ca3af; margin-top:4px">Backend API port (default 8000)</p>
+    </div>
+    <h2>Platforms</h2>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="plat-chatgpt" checked /> ChatGPT</label>
+      <label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="plat-gemini" /> Gemini</label>
+      <label style="font-size:12px;display:flex;align-items:center;gap:4px"><input type="checkbox" id="plat-perplexity" /> Perplexity</label>
+    </div>
+    <button class="btn btn-secondary" id="connectBtn">Connect &amp; Load Queue</button>
+    <div id="connectStatus"></div>
+  </div>
+
+  <div class="section">
+    <h2>Queue Status</h2>
+    <div class="row">
+      <label>Status</label>
+      <span id="statusBadge"><span class="badge badge-idle">Idle</span></span>
+    </div>
+    <div class="row">
+      <label>Progress</label>
+      <span id="progressText">0 / 0</span>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+    </div>
+    <div id="currentPrompt"></div>
+    <div class="platform-badges" id="platforms">
+      <span class="platform platform-chatgpt">ChatGPT</span>
+      <span class="platform platform-gemini">Gemini</span>
+      <span class="platform platform-perplexity">Perplexity</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Controls</h2>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="startBtn">Start</button>
+      <button class="btn btn-secondary" id="pauseBtn">Pause</button>
+    </div>
+    <button class="btn btn-secondary" id="skipBtn" style="margin-top: 6px">Skip Current</button>
+  </div>
+
+  <div class="section" style="border-bottom: none;">
+    <h2>How to Use</h2>
+    <ol style="font-size: 11px; color: #6b7280; padding-left: 16px; line-height: 1.6;">
+      <li>Make sure the backend is running (localhost:8000)</li>
+      <li>Click "Connect &amp; Load Queue" to fetch prompts</li>
+      <li>Open ChatGPT, Gemini, and Perplexity in separate tabs</li>
+      <li>Log in to each platform</li>
+      <li>Click "Start" — the extension will cycle through prompts</li>
+      <li>Watch for CAPTCHAs and intervene when needed</li>
+    </ol>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
