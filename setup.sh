@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Ensure common install paths are on PATH (Homebrew, nvm, etc.)
+export PATH="/opt/homebrew/bin:/usr/local/bin:$HOME/.nvm/versions/node/*/bin:$PATH"
+
 echo "=== AEO Insights Generator — Setup ==="
 echo ""
 
@@ -30,7 +33,8 @@ if [ ! -d venv ]; then
   python3 -m venv venv
 fi
 source venv/bin/activate
-pip install -q -r requirements.txt
+venv/bin/pip install -q -r requirements.txt
+venv/bin/pip install -q -r ../runner/requirements.txt
 deactivate
 cd ..
 
