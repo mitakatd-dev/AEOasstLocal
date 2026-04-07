@@ -1,0 +1,19 @@
+# Keep Docker build context small
+.git
+.claude
+.env
+.env.local
+.env.*.local
+data/
+frontend/
+node_modules/
+__pycache__/
+*.pyc
+backend/venv/
+backend/__pycache__/
+runner/logs/
+runner/flags/
+runner/checkpoints/
+*.log
+*.pid
+.DS_Store

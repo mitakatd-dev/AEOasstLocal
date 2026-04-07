@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { apiFetch } from '../api';
 import {
@@ -133,6 +133,30 @@ export default function Dashboard() {
   const [eventDate, setEventDate] = useState(new Date().toISOString().split('T')[0]);
   const [eventDesc, setEventDesc] = useState('');
 
+  // Import state
+  const importRef = useRef(null);
+  const [importing, setImporting] = useState(false);
+  const [importMsg, setImportMsg] = useState(null);
+
+  const handleImportCsv = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImporting(true);
+    setImportMsg(null);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await apiFetch('/api/runs/import/csv', { method: 'POST', body: form });
+      setImportMsg({ type: 'success', text: `Imported ${res.imported_results} results into session ${res.session_id}${res.created_prompts ? ` (${res.created_prompts} new prompts created)` : ''}` });
+      fetchAll(activeFrom, activeTo);
+    } catch (err) {
+      setImportMsg({ type: 'error', text: `Import failed: ${err.message || err}` });
+    } finally {
+      setImporting(false);
+      e.target.value = '';
+    }
+  };
+
   const fetchAll = useCallback((from, to) => {
     const qs = buildQS(from, to);
     setLoading(true);
@@ -239,7 +263,26 @@ export default function Dashboard() {
     <div>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">AEO Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold">AEO Dashboard</h1>
+            <div className="flex items-center gap-1.5">
+              <a href={`/api/runs/export/csv${buildQS(activeFrom, activeTo)}`} download
+                className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-500 transition">
+                ⬇ Export
+              </a>
+              <input ref={importRef} type="file" accept=".csv" className="hidden" onChange={handleImportCsv} />
+              <button onClick={() => importRef.current?.click()} disabled={importing}
+                className="text-xs px-2.5 py-1 rounded-lg border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-500 transition disabled:opacity-40">
+                {importing ? 'Importing…' : '⬆ Import'}
+              </button>
+            </div>
+          </div>
+          {importMsg && (
+            <div className={`mt-1 text-xs px-2 py-1 rounded ${importMsg.type === 'success' ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+              {importMsg.text}
+              <button onClick={() => setImportMsg(null)} className="ml-2 text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+          )}
           <p className="text-gray-500 text-sm mt-1">
             Tracking <span className="font-semibold text-gray-700">{brand}</span> visibility across AI engines
             {loading && <span className="ml-2 text-indigo-400 text-xs">Refreshing…</span>}

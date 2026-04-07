@@ -1,9 +1,9 @@
 FROM python:3.11-slim AS builder
 
 WORKDIR /app
-COPY requirements.txt .
+COPY backend/requirements.txt ./backend/
 RUN pip install --no-cache-dir --upgrade pip \
- && pip install --no-cache-dir -r requirements.txt
+ && pip install --no-cache-dir -r backend/requirements.txt
 
 FROM python:3.11-slim
 
@@ -31,13 +31,16 @@ WORKDIR /app
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin /usr/local/bin
 
-COPY --chown=appuser:appuser . .
+# Copy backend code and runner separately (build context is project root)
+COPY --chown=appuser:appuser backend/app ./app
+COPY --chown=appuser:appuser backend/entrypoint.sh ./entrypoint.sh
+COPY --chown=appuser:appuser runner ./runner
+
+# Create data directory for SQLite (will be volume-mounted)
+RUN mkdir -p /app/data && chown appuser:appuser /app/data
 
 # Install runner Python deps, fetch Camoufox (Firefox binary + GeoIP db),
 # then copy the binary cache into appuser's home so it's found at runtime.
-# Full fetch runs as root so it can write GeoIP into site-packages.
-# The Firefox binary lands in /root/.cache/camoufox — we copy it to
-# /home/appuser/.cache/camoufox so appuser finds it without re-downloading.
 RUN pip install --no-cache-dir -r runner/requirements.txt \
  && chmod +x /app/entrypoint.sh \
  && python -m camoufox fetch \

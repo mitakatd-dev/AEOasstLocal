@@ -174,10 +174,6 @@ export default function Settings() {
 
   if (loading) return <p className="text-gray-400 text-sm">Loading…</p>;
 
-  // 'none' is an explicit revocation — exclude from Pending Approval.
-  // Only show users who have truly never been assigned a role (null/undefined).
-  const pendingUsers = users.filter((u) => !u.role || u.role === '');
-  const activeUsers = users.filter((u) => u.role === 'admin' || u.role === 'viewer');
 
   return (
     <div className="max-w-2xl space-y-6">

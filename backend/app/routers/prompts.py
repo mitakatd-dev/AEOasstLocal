@@ -6,6 +6,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, validator
 
@@ -81,6 +82,23 @@ def list_prompts(
             pass
     prompts = q.order_by(Prompt.created_at.desc()).all()
     return [_prompt_to_out(p) for p in prompts]
+
+
+@router.get("/export/csv")
+def export_prompts_csv(db: Session = Depends(get_db)):
+    """Export all prompts as CSV (same format accepted by upload-csv)."""
+    prompts = db.query(Prompt).order_by(Prompt.created_at).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["label", "text", "query_type", "variant_group"])
+    for p in prompts:
+        writer.writerow([p.label, p.text, p.query_type or "", p.variant_group or ""])
+    output.seek(0)
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=prompts.csv"},
+    )
 
 
 @router.post("/", response_model=PromptOut, status_code=201)

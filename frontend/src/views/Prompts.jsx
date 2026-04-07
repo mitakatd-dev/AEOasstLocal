@@ -179,6 +179,10 @@ export default function Prompts() {
           <div className="flex items-center gap-2">
             {/* CSV upload — admin only */}
             <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={handleCsvUpload} />
+            <a href="/api/prompts/export/csv" download
+              className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-500 transition inline-block">
+              ⬇ Export CSV
+            </a>
             <button onClick={() => fileRef.current?.click()} disabled={uploading}
               className="text-sm px-3 py-1.5 rounded-lg border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 text-gray-500 transition disabled:opacity-40">
               {uploading ? 'Importing…' : '⬆ Import CSV'}

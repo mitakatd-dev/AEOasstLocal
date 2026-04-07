@@ -7,7 +7,7 @@ import threading
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -458,15 +458,153 @@ def delete_session(session_id: str, db: Session = Depends(get_db), _: dict = Dep
 # ── Standard list / detail ────────────────────────────────────────────────────
 
 @router.get("/export/csv")
-def export_all_csv(db: Session = Depends(get_db)):
-    rows = (
+def export_all_csv(
+    from_date: Optional[str] = None,
+    to_date:   Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Export results as CSV with optional date range filtering."""
+    q = (
         db.query(Result, Run, Prompt)
         .join(Run, Result.run_id == Run.id)
         .join(Prompt, Run.prompt_id == Prompt.id)
-        .order_by(Run.triggered_at.desc())
-        .all()
     )
+    if from_date:
+        dt = from_date if len(from_date) > 10 else from_date + " 00:00:00"
+        q = q.filter(Run.triggered_at >= dt)
+    if to_date:
+        dt = to_date if len(to_date) > 10 else to_date + " 23:59:59"
+        q = q.filter(Run.triggered_at <= dt)
+    rows = q.order_by(Run.triggered_at.desc()).all()
     return _build_csv_response(rows, "aeo_all_results.csv")
+
+
+@router.post("/import/csv")
+async def import_csv(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: dict = Depends(require_admin),
+):
+    """
+    Import results from another AEO Insights instance.
+
+    Accepts a CSV in the same format as the export endpoint.
+    Prompts are matched by label — if a prompt label doesn't exist locally,
+    it is created automatically.  All imported rows get a fresh session_id
+    so they appear as a distinct session in the UI.
+    """
+    from datetime import datetime, timezone
+
+    content = await file.read()
+    text = content.decode("utf-8-sig")  # handle BOM from Windows exports
+    reader = csv.DictReader(io.StringIO(text))
+
+    REQUIRED = {"prompt_label", "llm", "mentioned"}
+    if not reader.fieldnames or not REQUIRED.issubset(set(reader.fieldnames)):
+        raise HTTPException(
+            400,
+            f"CSV must contain at least these columns: {', '.join(sorted(REQUIRED))}. "
+            f"Got: {reader.fieldnames}",
+        )
+
+    # Build prompt lookup by label
+    all_prompts = db.query(Prompt).all()
+    prompt_map = {p.label: p for p in all_prompts}
+
+    import_session_id = f"import-{uuid.uuid4().hex[:12]}"
+    created_prompts = 0
+    imported_results = 0
+    skipped = 0
+
+    # Group rows by (prompt_label, triggered_at, collection_method) → one Run per group
+    from collections import defaultdict
+    run_groups = defaultdict(list)
+    for row in reader:
+        label = (row.get("prompt_label") or "").strip()
+        if not label:
+            skipped += 1
+            continue
+        key = (label, row.get("triggered_at", ""), row.get("collection_method", "browser"))
+        run_groups[key].append(row)
+
+    for (label, triggered_at, collection_method), rows_in_group in run_groups.items():
+        # Find or create prompt
+        if label not in prompt_map:
+            p = Prompt(label=label, text=label, query_type="imported")
+            db.add(p)
+            db.flush()
+            prompt_map[label] = p
+            created_prompts += 1
+        prompt = prompt_map[label]
+
+        # Parse triggered_at
+        ts = None
+        if triggered_at:
+            for fmt in ("%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S",
+                        "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                try:
+                    ts = datetime.strptime(triggered_at, fmt)
+                    break
+                except ValueError:
+                    continue
+        if ts is None:
+            ts = datetime.now(timezone.utc)
+
+        run = Run(
+            prompt_id=prompt.id,
+            triggered_at=ts,
+            status="done",
+            session_id=import_session_id,
+            collection_method=collection_method or "browser",
+        )
+        db.add(run)
+        db.flush()
+
+        for row in rows_in_group:
+            llm = (row.get("llm") or "").strip()
+            if not llm:
+                skipped += 1
+                continue
+
+            mentioned_raw = str(row.get("mentioned", "")).strip().lower()
+            mentioned = mentioned_raw in ("true", "1", "yes")
+
+            result = Result(
+                run_id=run.id,
+                llm=llm,
+                mentioned=mentioned,
+                position_score=_safe_float(row.get("position_score")),
+                sentiment=row.get("sentiment") or None,
+                competitors_mentioned=row.get("competitors_mentioned") or "[]",
+                error=row.get("error") or None,
+                raw_response=row.get("raw_response") or None,
+                latency_ms=_safe_int(row.get("latency_ms")),
+                cost_usd=_safe_float(row.get("cost_usd")),
+            )
+            db.add(result)
+            imported_results += 1
+
+    db.commit()
+    return {
+        "session_id": import_session_id,
+        "imported_results": imported_results,
+        "created_prompts": created_prompts,
+        "skipped_rows": skipped,
+    }
+
+
+def _safe_float(val) -> float:
+    try:
+        return float(val) if val else 0.0
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _safe_int(val) -> int:
+    try:
+        return int(float(val)) if val else 0
+    except (ValueError, TypeError):
+        return 0
 
 
 def _build_csv_response(rows, filename: str):
