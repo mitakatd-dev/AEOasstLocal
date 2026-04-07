@@ -182,21 +182,21 @@ function PendingJob({ method, queue, onStarted, onBrowserLaunched }) {
   }, [launched]);
 
   if (launched) {
-    const slowStart  = launchSecs >= 60;
-    const realError  = launchSecs >= 180;
+    const slowStart  = launchSecs >= 15;
+    const realError  = launchSecs >= 60;
     const borderCls  = realError ? 'border-orange-200 bg-orange-50' : `${accent.border} ${accent.bg}`;
 
     const heading = realError
       ? 'Runner failed to start'
       : slowStart
-        ? `Container initialising… (${launchSecs}s)`
-        : `Starting runner job… (${launchSecs}s)`;
+        ? `Browser starting… (${launchSecs}s)`
+        : `Starting browser runner… (${launchSecs}s)`;
 
     const body = realError
-      ? 'No worker registered after 3 minutes. The Cloud Run Job may have crashed — check Cloud Logging for errors.'
+      ? 'No worker registered after 3 minutes. The runner subprocess may have crashed — check runner/logs/ for errors.'
       : slowStart
-        ? 'Still normal — cloud container start-up can take up to 2 minutes. The runner card will appear once it registers.'
-        : 'Cloud Run is provisioning the runner container. This typically takes about 1 minute.';
+        ? 'Still starting — the browser can take up to 2 minutes on first launch. The runner card will appear once it registers.'
+        : 'Launching local browser subprocess. This typically takes a few seconds.';
 
     return (
       <div className={`rounded-xl border-2 p-5 space-y-3 ${borderCls}`}>
@@ -217,7 +217,7 @@ function PendingJob({ method, queue, onStarted, onBrowserLaunched }) {
             </p>
           </div>
           {realError && (
-            <button onClick={() => { setLaunched(false); setError('Runner did not register within 3 minutes — check Cloud Logging.'); }}
+            <button onClick={() => { setLaunched(false); setError('Runner did not register within 3 minutes — check runner/logs/ for details.'); }}
               className="text-xs text-orange-600 border border-orange-300 px-2 py-1 rounded-lg hover:bg-orange-100 flex-shrink-0">
               Dismiss
             </button>
@@ -280,11 +280,12 @@ const PLATFORM_COLORS = { openai: 'bg-indigo-500', gemini: 'bg-emerald-500', per
 const PLATFORM_TEXT   = { openai: 'text-indigo-600', gemini: 'text-emerald-600', perplexity: 'text-amber-600' };
 
 function BatchCard({ batch, defaultOpen = false, onRefresh, isAdmin = false, onDelete }) {
-  const [open,     setOpen]     = useState(defaultOpen);
-  const [results,  setResults]  = useState(null);
-  const [loading,  setLoading]  = useState(false);
-  const [retrying, setRetrying] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [open,         setOpen]         = useState(defaultOpen);
+  const [results,      setResults]      = useState(null);
+  const [loading,      setLoading]      = useState(false);
+  const [retrying,     setRetrying]     = useState(false);
+  const [deleting,     setDeleting]     = useState(false);
+  const [failedLabels, setFailedLabels] = useState(null); // prompt labels for failed IDs
 
   const running    = batchIsRunning(batch);
   const pct        = batchPct(batch);
@@ -306,6 +307,14 @@ function BatchCard({ batch, defaultOpen = false, onRefresh, isAdmin = false, onD
       setResults({ stats: statsRes });
       setOpen(true);
     } catch {}
+    // Resolve failed prompt labels if not already fetched
+    if (batch.failed_prompt_ids?.length && !failedLabels) {
+      try {
+        const all = await apiFetch('/api/prompts/');
+        const map = Object.fromEntries(all.map(p => [p.id, p.label]));
+        setFailedLabels(batch.failed_prompt_ids.map(id => map[id] || `Prompt #${id}`));
+      } catch {}
+    }
   };
 
   const loadResults = async () => {
@@ -471,6 +480,20 @@ function BatchCard({ batch, defaultOpen = false, onRefresh, isAdmin = false, onD
                   <p className="text-xs text-gray-400">prompts</p>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* Failed prompts — only shown when there are failures */}
+          {failedLabels?.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-xs font-semibold text-red-700 mb-2">
+                ✗ {failedLabels.length} failed prompt{failedLabels.length !== 1 ? 's' : ''}
+              </p>
+              <ul className="space-y-1">
+                {failedLabels.map((label, i) => (
+                  <li key={i} className="text-xs text-red-600 font-mono truncate">· {label}</li>
+                ))}
+              </ul>
             </div>
           )}
 

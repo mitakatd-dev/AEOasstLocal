@@ -86,19 +86,35 @@ def _type_into(page: Page, el, text: str) -> None:
     page.keyboard.type(text, delay=20)
 
 
+def _send_prompt(page: Page) -> None:
+    """Click the send button, falling back to Enter key if button is blocked."""
+    _dismiss_modals(page)
+    try:
+        btn = page.locator(SEND_SEL)
+        btn.wait_for(state="visible", timeout=5_000)
+        btn.click(timeout=5_000)
+        return
+    except Exception:
+        pass
+    # Fallback: dismiss once more then submit via keyboard
+    _dismiss_modals(page)
+    page.keyboard.press("Enter")
+
+
 def _submit_prompt(page: Page, text: str) -> None:
-    page.goto(LOGIN_URL, wait_until="domcontentloaded")
-    time.sleep(1)
+    # Only navigate if we're not already on chatgpt.com — avoids a redundant
+    # full page load (and potential network abort) on every prompt.
+    if "chatgpt.com" not in page.url:
+        page.goto(LOGIN_URL, wait_until="domcontentloaded")
+        time.sleep(1)
     _dismiss_modals(page)
     input_el, matched_sel = _find_input(page)
-    # Dismiss again — modals (e.g. memory onboarding) can appear *after* the
-    # input is located but before the click, intercepting pointer events.
+    # Dismiss again — modals can appear *after* the input is located but before
+    # the click, intercepting pointer events.
     _dismiss_modals(page)
     print(f"    [input] Using selector: {matched_sel}")
     _type_into(page, input_el, text)
-    time.sleep(0.5)
-    _dismiss_modals(page)  # one final check before send — popup can appear while typing
-    page.locator(SEND_SEL).click()
+    _send_prompt(page)
 
 
 def _wait_for_response(page: Page) -> str:

@@ -276,6 +276,29 @@ class Heartbeat:
                 break
 
 
+# ── Error classification ──────────────────────────────────────────────────────
+
+def _classify_error(exc: Exception) -> str:
+    """Classify an exception into a short human-readable error type for logs."""
+    msg = str(exc).lower()
+    # Check specific types before generic timeout — order matters
+    if any(p in msg for p in ("rate limit", "too many", "429")):
+        return "RATE_LIMITED"
+    if any(p in msg for p in ("ns_error_abort", "net::err_aborted", "aborted")):
+        return "NETWORK_ABORT"
+    if any(p in msg for p in ("target page", "browser has been closed", "target closed")):
+        return "BROWSER_CLOSED"
+    if any(p in msg for p in ("login", "auth", "sign in", "unauthorized")):
+        return "AUTH_EXPIRED"
+    if any(p in msg for p in ("timeout", "exceeded")):
+        if "send" in msg or "locator" in msg:
+            return "MODAL_BLOCKED"
+        if "goto" in msg or "navigation" in msg or "ns_error" in msg:
+            return "NETWORK_TIMEOUT"
+        return "TIMEOUT"
+    return type(exc).__name__
+
+
 # ── Browser-closed error detection ───────────────────────────────────────────
 
 def _is_browser_closed(exc: Exception) -> bool:
@@ -411,7 +434,7 @@ def run_batch(
         if browser_restarts > 0:
             _log(f"\n  ⟳ Browser restart {browser_restarts}/{_MAX_RESTARTS} "
                  f"(resuming at prompt {prompt_idx + 1}/{len(prompts)})…")
-            time.sleep(15)  # brief pause before restarting to let any rate-limiting or session issues settle
+            time.sleep(3)  # brief pause before restarting
         else:
             _log(f"\n[5/5] Opening browser "
                  f"(headless={headless}, engine=Firefox/Camoufox)…")
@@ -472,16 +495,17 @@ def run_batch(
                             browser_died = True
                             break  # break attempt loop; prompt will retry after restart
                         last_error = exc
+                        err_type = _classify_error(exc)
                         shot_label = (f"[{i}/{len(prompts)}] attempt {attempt+1} "
-                                      f"failed: {type(exc).__name__}")
+                                      f"failed: {err_type}")
                         post_screenshot(page, worker_id, name, label=shot_label)
                         if attempt < 2:
-                            wait_s = 30 * (attempt + 1)  # exponential backoff: 30s, 60s
-                            _log(f"    ↺ Attempt {attempt + 1}/3 failed: {exc}. "
+                            wait_s = 5 * (attempt + 1)  # 5s, 10s — local subprocess, not cloud
+                            _log(f"    ↺ Attempt {attempt + 1}/3 failed [{err_type}]: {exc}. "
                                  f"Retrying in {wait_s}s…")
                             time.sleep(wait_s)
                         else:
-                            _log(f"    ✗ All 3 attempts failed: {exc}")
+                            _log(f"    ✗ All 3 attempts failed [{err_type}]: {exc}")
 
                 if browser_died:
                     # Prompt will be retried on next browser restart — do not advance index
@@ -514,7 +538,7 @@ def run_batch(
                 send_heartbeat(worker_id, batch_id, completed_count)
 
                 if prompt_idx < len(prompts) and not browser_died:
-                    time.sleep(12)  # inter-prompt cooldown: avoids rate-limiting and lets the page settle
+                    time.sleep(5)  # inter-prompt cooldown
 
         # ── End of Camoufox context ───────────────────────────────────────────
         if browser_died:
