@@ -329,6 +329,7 @@ def run_batch(
     Optional residential proxy via RESIDENTIAL_PROXY_URL env var.
     """
     from camoufox.sync_api import Camoufox
+    from camoufox import DefaultAddons
 
     _log(f"\n{'='*60}")
     _log(f"  AEO Browser Runner — {platform.upper()}")
@@ -393,6 +394,8 @@ def run_batch(
 
     camoufox_kwargs: dict = {
         "headless": "virtual" if headless else False,
+        "addons": [],              # no addons — avoids download/extraction errors
+        "exclude_addons": list(DefaultAddons),
     }
     if proxy:
         camoufox_kwargs["proxy"] = proxy
