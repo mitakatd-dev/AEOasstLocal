@@ -1,171 +1,163 @@
 @echo off
-REM ── AEO Insights Local — One-click run (Windows) ───────────────────
-REM Usage:  run.bat          Start the app
-REM         run.bat stop     Stop all services
+REM ── AEO Insights Local ─────────────────────────────────────────────
+REM Double-click to start. Press any key to stop.
 REM ───────────────────────────────────────────────────────────────────
-setlocal enabledelayedexpansion
 cd /d "%~dp0"
 
 set PORT_BE=8000
 set PORT_FE=3001
-set PIDFILE_BE=data\.backend.pid
-set PIDFILE_FE=data\.frontend.pid
 
-if /i "%1"=="stop" goto :stop_all
+if /i "%~1"=="stop" goto :stop_all
 
 echo.
-echo   ======================================
+echo   ========================================
 echo        AEO Insights Local
-echo   ======================================
+echo   ========================================
 echo.
 
-REM ── 1. Ensure prerequisites (auto-install) ─────────────────────────
+REM ── Check prerequisites ────────────────────────────────────────────
+echo   [1/7] Checking prerequisites...
 
-REM Check Python
 where python >nul 2>nul
-if %errorlevel% neq 0 (
-    echo   Python not found. Installing...
-    where winget >nul 2>nul
-    if %errorlevel% neq 0 (
-        echo.
-        echo   ERROR: Please install Python 3.11+ manually from:
-        echo   https://www.python.org/downloads/
-        echo   IMPORTANT: Check "Add Python to PATH" during install.
-        echo.
-        pause
-        exit /b 1
-    )
-    winget install Python.Python.3.11 --accept-package-agreements --accept-source-agreements
-    echo.
-    echo   Python installed. Please CLOSE this window and run run.bat again
-    echo   so that Python is on your PATH.
+if errorlevel 1 (
+    echo         [FAIL] Python not found on PATH.
+    echo         Ask your IT team to install Python 3.11+ and add it to PATH.
     echo.
     pause
-    exit /b 0
+    exit /b 1
 )
-for /f "tokens=*" %%v in ('python --version 2^>^&1') do echo   OK %%v
+echo         [OK] Python found
 
-REM Check Node.js
 where node >nul 2>nul
-if %errorlevel% neq 0 (
-    echo   Node.js not found. Installing...
-    where winget >nul 2>nul
-    if %errorlevel% neq 0 (
-        echo.
-        echo   ERROR: Please install Node.js 18+ manually from:
-        echo   https://nodejs.org/
-        echo.
-        pause
-        exit /b 1
-    )
-    winget install OpenJS.NodeJS.LTS --accept-package-agreements --accept-source-agreements
-    echo.
-    echo   Node.js installed. Please CLOSE this window and run run.bat again
-    echo   so that Node is on your PATH.
+if errorlevel 1 (
+    echo         [FAIL] Node.js not found on PATH.
+    echo         Ask your IT team to install Node.js 18+ and add it to PATH.
     echo.
     pause
-    exit /b 0
+    exit /b 1
 )
-for /f "tokens=*" %%v in ('node --version 2^>^&1') do echo   OK Node %%v
+echo         [OK] Node.js found
 
-REM ── 2. First-time setup (brand name) ───────────────────────────────
+REM ── Configuration ──────────────────────────────────────────────────
+echo   [2/7] Checking configuration...
+
 if not exist data mkdir data
 
-if not exist .env (
-    copy .env.example .env >nul
-    echo.
-    echo   First-time setup — what brand are you tracking?
-    echo.
-    set "BRAND=YourBrandName"
-    set /p "BRAND=  Brand name [YourBrandName]: "
-    set "COMPS=Competitor1,Competitor2,Competitor3"
-    set /p "COMPS=  Competitors (comma-separated) [Competitor1,Competitor2,Competitor3]: "
+if exist .env goto :env_exists
 
-    REM Write .env with user values
-    (
-        echo TARGET_COMPANY=!BRAND!
-        echo COMPETITORS=!COMPS!
-        echo OPENAI_API_KEY=
-        echo GEMINI_API_KEY=
-        echo PERPLEXITY_API_KEY=
-    ) > .env
-    echo.
-    echo   OK Saved to .env
+copy .env.example .env >nul
+echo.
+echo         First-time setup - what brand are you tracking?
+echo.
+set "BRAND=YourBrandName"
+set /p "BRAND=        Brand name [YourBrandName]: "
+set "COMPS=Competitor1,Competitor2,Competitor3"
+set /p "COMPS=        Competitors, comma-separated [Competitor1,Competitor2,Competitor3]: "
+
+echo TARGET_COMPANY=%BRAND%> .env
+echo COMPETITORS=%COMPS%>> .env
+echo OPENAI_API_KEY=>> .env
+echo GEMINI_API_KEY=>> .env
+echo PERPLEXITY_API_KEY=>> .env
+
+echo         [OK] Configuration saved
+goto :env_done
+
+:env_exists
+echo         [OK] .env found
+
+:env_done
+for /f "tokens=1,* delims==" %%a in ('findstr /b "TARGET_COMPANY" .env') do set "BRAND=%%b"
+echo         Brand: %BRAND%
+
+REM ── Python dependencies ────────────────────────────────────────────
+if exist backend\venv (
+    echo   [3/7] Python dependencies    [OK] installed
+    goto :node_deps
 )
 
-for /f "tokens=1,* delims==" %%a in ('findstr /b "TARGET_COMPANY" .env') do set BRAND=%%b
-echo   Brand: %BRAND%
+echo   [3/7] Installing Python dependencies (first run, 1-2 min)...
+python -m venv backend\venv
+call backend\venv\Scripts\pip install -q -r backend\requirements.txt
+call backend\venv\Scripts\pip install -q -r runner\requirements.txt
+echo         [OK] Done
 
-REM ── 3. Install app dependencies (first run only) ───────────────────
-if not exist backend\venv (
-    echo   Installing Python dependencies (first run only)...
-    python -m venv backend\venv
-    backend\venv\Scripts\pip install -q -r backend\requirements.txt
-    backend\venv\Scripts\pip install -q -r runner\requirements.txt
-    echo   OK Python deps ready
+REM ── Node dependencies ──────────────────────────────────────────────
+:node_deps
+if exist frontend\node_modules (
+    echo   [4/7] Frontend dependencies   [OK] installed
+    goto :start_services
 )
 
-if not exist frontend\node_modules (
-    echo   Installing frontend dependencies (first run only)...
-    cd frontend
-    call npm install --silent
-    cd ..
-    echo   OK Frontend deps ready
-)
+echo   [4/7] Installing frontend dependencies (first run, 1-2 min)...
+cd frontend
+call npm install --silent
+cd ..
+echo         [OK] Done
 
-REM ── 4. Stop anything already running ────────────────────────────────
+REM ── Start services ─────────────────────────────────────────────────
+:start_services
+
+REM Kill any leftover instances
 taskkill /f /fi "WINDOWTITLE eq AEO-Backend" >nul 2>nul
 taskkill /f /fi "WINDOWTITLE eq AEO-Frontend" >nul 2>nul
-
-REM ── 5. Start backend ───────────────────────────────────────────────
-echo.
-echo   Starting backend on :%PORT_BE% ...
-start "AEO-Backend" /min cmd /c "cd backend && venv\Scripts\activate && python -m uvicorn app.main:app --host 0.0.0.0 --port %PORT_BE%"
-
-echo   Waiting for backend...
-set /a tries=0
-:healthloop
-if %tries% geq 30 goto :backend_ready
-powershell -Command "try { (Invoke-WebRequest -Uri 'http://localhost:%PORT_BE%/api/health' -UseBasicParsing -TimeoutSec 2).StatusCode } catch { exit 1 }" >nul 2>nul
-if %errorlevel%==0 goto :backend_ready
 timeout /t 1 /nobreak >nul
-set /a tries+=1
-goto :healthloop
 
-:backend_ready
-echo   OK Backend ready
+echo   [5/7] Starting backend...
+start "AEO-Backend" /min cmd /c "cd /d "%~dp0backend" && call venv\Scripts\activate.bat && python -m uvicorn app.main:app --host 0.0.0.0 --port %PORT_BE%"
 
-REM ── 6. Start frontend ──────────────────────────────────────────────
-echo   Starting frontend on :%PORT_FE% ...
-start "AEO-Frontend" /min cmd /c "cd frontend && npx vite --port %PORT_FE% --host 0.0.0.0"
+REM Wait for backend health check
+set /a TRIES=0
+:health_wait
+if %TRIES% geq 30 goto :health_fail
+powershell -NoProfile -Command "try{[void](Invoke-WebRequest http://localhost:%PORT_BE%/api/health -UseBasicParsing -TimeoutSec 2);exit 0}catch{exit 1}" >nul 2>nul
+if not errorlevel 1 goto :health_ok
+timeout /t 1 /nobreak >nul
+set /a TRIES+=1
+goto :health_wait
 
+:health_fail
+echo         [FAIL] Backend did not respond after 30s
+echo         Check the minimized "AEO-Backend" window for errors.
+pause
+exit /b 1
+
+:health_ok
+echo         [OK] Backend running on port %PORT_BE%
+
+echo   [6/7] Starting frontend...
+start "AEO-Frontend" /min cmd /c "cd /d "%~dp0frontend" && call npx vite --port %PORT_FE% --host 0.0.0.0"
 timeout /t 3 /nobreak >nul
-echo   OK Frontend ready
+echo         [OK] Frontend running on port %PORT_FE%
 
-REM ── 7. Open browser ────────────────────────────────────────────────
-set URL=http://localhost:%PORT_FE%
-start %URL%
+echo   [7/7] Opening browser...
+start "" http://localhost:%PORT_FE%
 
 echo.
-echo   ----------------------------------------
-echo   App:   %URL%
-echo   Brand: %BRAND%
+echo   ========================================
 echo.
-echo   Stop:  run.bat stop
-echo   Or:    close this window
-echo   ----------------------------------------
+echo     READY   http://localhost:%PORT_FE%
+echo     Brand:  %BRAND%
 echo.
-echo   Services are running in background.
-echo   Press any key to stop all services...
+echo     Backend  [RUNNING]  port %PORT_BE%
+echo     Frontend [RUNNING]  port %PORT_FE%
+echo.
+echo   ========================================
+echo.
+echo   Press any key to STOP everything.
+echo.
 pause >nul
-goto :stop_all
 
 REM ── Stop ───────────────────────────────────────────────────────────
 :stop_all
 echo.
-echo   Stopping services...
-taskkill /f /fi "WINDOWTITLE eq AEO-Backend" >nul 2>nul && echo   OK Backend stopped
-taskkill /f /fi "WINDOWTITLE eq AEO-Frontend" >nul 2>nul && echo   OK Frontend stopped
-echo   Done.
-if /i not "%1"=="stop" pause
+echo   Stopping...
+taskkill /f /fi "WINDOWTITLE eq AEO-Backend" >nul 2>nul
+echo     Backend  [STOPPED]
+taskkill /f /fi "WINDOWTITLE eq AEO-Frontend" >nul 2>nul
+echo     Frontend [STOPPED]
+echo.
+echo   All services stopped.
+echo.
+if /i not "%~1"=="stop" pause
 exit /b 0
