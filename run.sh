@@ -92,6 +92,8 @@ if [ ! -d backend/venv ]; then
   python3 -m venv backend/venv
   backend/venv/bin/pip install -q -r backend/requirements.txt
   backend/venv/bin/pip install -q -r runner/requirements.txt
+  echo "  Downloading browser engine (~80MB, one-time)…"
+  backend/venv/bin/python -m camoufox fetch
   echo "  ✓ Python deps ready"
 fi
 

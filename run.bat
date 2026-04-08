@@ -80,6 +80,8 @@ echo   [3/7] Installing Python dependencies (first run, 1-2 min)...
 python -m venv backend\venv
 call backend\venv\Scripts\pip install -q -r backend\requirements.txt
 call backend\venv\Scripts\pip install -q -r runner\requirements.txt
+echo         Downloading browser engine (one-time, ~80MB)...
+call backend\venv\Scripts\python -m camoufox fetch
 echo         [OK] Done
 
 REM ── Node dependencies ──────────────────────────────────────────────
